@@ -181,7 +181,7 @@
 
   const AUTH_URL  = "https://accounts.spotify.com/authorize";
   const TOKEN_URL = "https://accounts.spotify.com/api/token";
-  const SCOPES    = "playlist-read-private playlist-modify-private playlist-modify-public";
+  const SCOPES    = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public";
   const REDIRECT  = location.origin + location.pathname;
 
   const $ = (id) => document.getElementById(id);
@@ -260,6 +260,7 @@
     if(!res.ok) throw new Error(data.error_description || "トークンを取得できませんでした。Redirect URIの登録内容を確認してください。");
     sessionStorage.removeItem("pkce_verifier");
     sessionStorage.setItem("access_token", data.access_token);
+    sessionStorage.setItem("token_scopes", SCOPES);
     return data.access_token;
   }
 
@@ -321,18 +322,29 @@
   const FIELDS = "next,items(is_local,track(uri,name,type,disc_number,track_number," +
                  "album(id,name,release_date,release_date_precision),artists(name)))";
 
-  async function fetchAllTracks(id){
+  async function fetchTracksOnce(id, useFields){
     const out = [];
     let offset = 0;
     while(true){
-      const page = await api("/playlists/" + id + "/tracks?limit=100&offset=" + offset +
-                             "&fields=" + encodeURIComponent(FIELDS));
+      const url = "/playlists/" + id + "/tracks?limit=100&offset=" + offset +
+                  (useFields ? "&fields=" + encodeURIComponent(FIELDS) : "");
+      const page = await api(url);
       out.push.apply(out, page.items || []);
       say(el.status, "読み込み中… " + out.length + "曲");
       if(!page.next) break;
       offset += 100;
     }
     return out;
+  }
+
+  async function fetchAllTracks(id){
+    try{
+      return await fetchTracksOnce(id, true);
+    }catch(e){
+      if(e.message.indexOf("403") === -1 && e.message.indexOf("400") === -1) throw e;
+      say(el.status, "絞り込みなしで再試行しています…", "warn");
+      return await fetchTracksOnce(id, false);
+    }
   }
 
   // ---------- 並べ替え ----------
@@ -617,6 +629,11 @@
       return;
     }
     const existing = sessionStorage.getItem("access_token");
+    if(existing && sessionStorage.getItem("token_scopes") !== SCOPES){
+      sessionStorage.removeItem("access_token");
+      say(el.status, "必要な権限が増えたため、もう一度Spotifyに接続してください。", "warn");
+      return;
+    }
     if(existing){
       token = existing;
       signedIn();

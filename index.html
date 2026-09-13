@@ -47,6 +47,17 @@
   }
   input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
 
+  .choices{display:flex;flex-wrap:wrap;gap:8px}
+  .choice{
+    display:inline-flex;align-items:center;gap:7px;margin:0;
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:9px 14px;font-size:.9rem;font-weight:400;cursor:pointer;
+  }
+  .choice input{accent-color:var(--accent);margin:0}
+  .choice:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+  .choice.on{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+  .choice.block{display:flex;width:100%;align-items:flex-start}
+
   .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
   button{
     font:inherit;font-weight:600;font-size:.92rem;cursor:pointer;
@@ -58,6 +69,11 @@
   button.primary:hover:not(:disabled){background:#a92253}
   button:disabled{opacity:.4;cursor:not-allowed}
   button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.link{
+    border:none;background:none;padding:0;font-size:.82rem;font-weight:600;
+    color:var(--accent);text-decoration:underline;
+  }
+  button.link:hover:not(:disabled){background:none}
 
   .status{margin-top:20px;font-size:.9rem;min-height:1.7em}
   .status.err{color:var(--accent)}
@@ -70,14 +86,21 @@
 
   .release{margin-bottom:22px}
   .release-head{
-    display:flex;align-items:baseline;gap:10px;
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
     padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:8px;
   }
   .date{
     font-variant-numeric:tabular-nums;font-size:.82rem;color:var(--accent);
     font-weight:700;white-space:nowrap;
   }
+  .tag{
+    font-size:.7rem;font-weight:700;letter-spacing:.04em;white-space:nowrap;
+    border-radius:999px;padding:2px 9px;border:1px solid currentColor;
+  }
+  .tag.phys{color:var(--ok)}
+  .tag.digi{color:var(--muted)}
   .album{font-size:.92rem;font-weight:600;overflow-wrap:anywhere}
+  .subdate{width:100%;color:var(--muted);font-size:.78rem;margin-top:2px}
   ol.tracks{list-style:none;margin:0;padding:0}
   ol.tracks li{display:flex;gap:12px;padding:3px 0;font-size:.92rem}
   .no{
@@ -114,11 +137,13 @@
 
 <header>
   <h1>プレイリスト並べ替え</h1>
-  <p>リリースが新しい順、同じリリース内は収録順に並べ直します</p>
+  <p>CD・レコードの発売日を基準に、新しい順／古い順へ並べ直します</p>
 </header>
 
 <p class="rule">
-  並べ替えの基準は <b>リリース日の新しい順</b> →  <b>ディスク番号</b> →  <b>トラック番号</b>。
+  並べ替えの基準は <b>発売日</b> →  <b>ディスク番号</b> →  <b>トラック番号</b>。
+  発売日は <b>CD・レコードの発売日</b> をMusicBrainzの公開データベースから自動で調べ、
+  見つからない曲（配信限定など）は <b>Spotifyの配信開始日</b> を使います。
   シングルはトラック1が表題曲として登録されているので、この基準だけで表題曲→カップリングの順になります。
 </p>
 
@@ -134,9 +159,35 @@
   <p class="hint">Spotifyアプリの共有メニューからコピーしたリンクをそのまま貼り付けられます。</p>
 </div>
 
+<div class="field">
+  <label>並び順</label>
+  <div class="choices" id="orderChoices">
+    <label class="choice on"><input type="radio" name="order" value="desc" checked> 発売日が新しい順</label>
+    <label class="choice"><input type="radio" name="order" value="asc"> 発売日が古い順</label>
+  </div>
+  <p class="hint">読み込んだあとでも切り替えられます。切り替えるとその場で並びが入れ替わります。</p>
+</div>
+
+<div class="field">
+  <label>発売日の調べ方</label>
+  <label class="choice block on" id="useMbLabel">
+    <input type="checkbox" id="useMb" checked>
+    <span>CD・レコードの発売日を自動で調べる</span>
+  </label>
+  <p class="hint">
+    MusicBrainzの公開データベースからCD・レコード（アナログ盤・カセットなど）の発売日を探し、いちばん古い発売日を基準にします。
+    ベスト盤に入っている曲は、その曲が最初にCD・レコードで発売された日を基準にします。
+    物理リリースが見つからない曲はSpotifyの配信開始日を基準にします。
+    MusicBrainz側の制限で1秒に1件までしか照会できないため、曲数が多いと数分かかります。
+    調べた結果はこの端末に保存され、次回以降は省略されます。
+    チェックを外すと、これまでどおりSpotifyの配信開始日だけで並べ替えます。
+  </p>
+</div>
+
 <div class="actions">
   <button id="btnConnect" class="primary">Spotifyに接続</button>
   <button id="btnLoad" disabled>曲を読み込む</button>
+  <button id="btnStop" class="hidden">発売日の照会を中止</button>
   <button id="btnMine" class="hidden">自分のプレイリスト一覧</button>
   <button id="btnCheck" class="hidden">接続の確認</button>
   <button id="btnLogout" class="hidden">接続を解除</button>
@@ -173,6 +224,28 @@
   <p>並べ替えの対象は自分が所有するプレイリストのみです。ローカルファイルとして追加した曲はSpotify側で並べ替えができないため、対象から除外して件数を表示します。</p>
 </details>
 
+<details>
+  <summary>発売日の調べ方について</summary>
+  <p>
+    CD・レコードの発売日は <a href="https://musicbrainz.org/" target="_blank" rel="noopener">MusicBrainz</a> の公開データベースから取得します。
+    アカウント登録もAPIキーも不要です。調べる順序は次のとおりです。
+  </p>
+  <ol>
+    <li>アルバム名とアーティスト名でリリースを検索し、CD・アナログ盤・カセットなど <b>物理メディアのリリース</b> だけを取り出して、いちばん古い発売日を採用します。</li>
+    <li>ベスト盤・コンピレーションの曲、または1で見つからなかった曲は、曲ごとの <b>ISRC</b>（国際標準レコーディングコード）で照会し直し、その録音が最初に物理メディアで発売された日を採用します。</li>
+    <li>どちらでも見つからない曲は <b>Spotifyの配信開始日</b> を採用します。配信限定の曲のほか、MusicBrainzに登録がない曲もここに入ります。</li>
+  </ol>
+  <p>
+    一覧では、CD・レコードの発売日を採用した曲に <span class="tag phys">CD・レコード</span>、
+    配信開始日を採用した曲に <span class="tag digi">配信</span> の印が付きます。
+    印が実際のジャケットと食い違う場合は、MusicBrainz側のデータを直すと次回から正しく反映されます。
+  </p>
+  <p>
+    調べた結果はこの端末のブラウザに保存され、60日間は再照会しません。
+    <button id="btnClearCache" class="link" type="button">保存した発売日を消去して調べ直す</button>
+  </p>
+</details>
+
 </div>
 
 <script>
@@ -184,18 +257,25 @@
   const SCOPES    = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public";
   const REDIRECT  = location.origin + location.pathname;
 
+  const MB_BASE   = "https://musicbrainz.org/ws/2";
+  const MB_GAP    = 1100;                       // MusicBrainzは1秒1リクエストまで
+  const CACHE_KEY = "release_date_cache_v1";
+  const CACHE_TTL = 1000 * 60 * 60 * 24 * 60;   // 60日
+
   const $ = (id) => document.getElementById(id);
   const el = {
     clientId: $("clientId"), playlistId: $("playlistId"),
     connect: $("btnConnect"), load: $("btnLoad"), logout: $("btnLogout"), check: $("btnCheck"),
-    mineBtn: $("btnMine"), mine: $("mine"),
+    mineBtn: $("btnMine"), mine: $("mine"), stop: $("btnStop"),
+    useMb: $("useMb"), useMbLabel: $("useMbLabel"), orderChoices: $("orderChoices"),
+    clearCache: $("btnClearCache"),
     status: $("status"), preview: $("preview"), previewTitle: $("previewTitle"),
     previewMeta: $("previewMeta"), list: $("list"),
     backup: $("btnBackup"), apply: $("btnApply"), applyStatus: $("applyStatus")
   };
 
   let token = null;
-  let playlist = null;      // {id, name, total}
+  let playlist = null;      // {id, name}
   let original = [];        // 読み込み順
   let sorted = [];          // 並べ替え後
 
@@ -203,6 +283,11 @@
   function say(node, msg, kind){
     node.textContent = msg;
     node.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function currentOrder(){
+    const checked = document.querySelector('input[name="order"]:checked');
+    return checked && checked.value === "asc" ? "asc" : "desc";
   }
 
   // ---------- PKCE ----------
@@ -336,60 +421,417 @@
     return out;
   }
 
-  // ---------- 並べ替え ----------
-  function releaseKey(album){
-    if(!album || !album.release_date) return "0000-01-01";
-    const p = album.release_date_precision;
-    if(p === "year")  return album.release_date + "-01-01";
-    if(p === "month") return album.release_date + "-01";
-    return album.release_date;
+  // ---------- 日付ユーティリティ ----------
+  // "1998" / "1998-06" / "1998-06-24" を比較用の "1998-06-24" 形に揃える
+  function dateKey(d){
+    const m = String(d || "").match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/);
+    if(!m) return null;
+    const pad = function(v){ return ("0" + v).slice(-2); };
+    return m[1] + "-" + (m[2] ? pad(m[2]) : "01") + "-" + (m[3] ? pad(m[3]) : "01");
+  }
+  function formatDate(d){
+    if(!d) return "発売日不明";
+    const parts = String(d).split("-");
+    if(parts.length === 1) return parts[0] + "年";
+    if(parts.length === 2) return parts[0] + "年" + parts[1] + "月";
+    return parts[0] + "." + parts[1] + "." + parts[2];
+  }
+  function spotifyDate(album){
+    if(!album || !album.release_date) return "";
+    return album.release_date;   // 精度に応じて "1998" / "1998-06" / "1998-06-24"
   }
 
-  function sortItems(items){
-    return items.slice().sort(function(a, b){
-      const ta = a.track, tb = b.track;
-      const ka = releaseKey(ta.album), kb = releaseKey(tb.album);
-      if(ka !== kb) return kb < ka ? -1 : 1;                   // リリース日 降順
-      if(ta.album.id !== tb.album.id){                         // 同日別リリースはまとめる
-        return (ta.album.name || "").localeCompare(tb.album.name || "", "ja");
+  // ---------- 文字列の正規化 ----------
+  function baseTitle(s){
+    return String(s || "")
+      // 「(Deluxe Edition)」「【初回限定盤】」などの版表記を落とす
+      .replace(/[\(\[（【][^)\]）】]{0,60}(deluxe|edition|remaster|remastered|reissue|expanded|bonus|anniversary|version|ver\.?|special|limited|初回|通常盤|限定|完全生産|デラックス|リマスター|盤)[^)\]）】]{0,60}[\)\]）】]/gi, " ")
+      // 「- Single」「- 2011 Remaster」などの接尾辞を落とす
+      .replace(/\s[-–—]\s[^-–—]{0,40}(single|ep|remaster(ed)?|version|mix|edition)\s*$/i, " ")
+      .trim();
+  }
+  function norm(s){
+    try{
+      return String(s || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    }catch(e){
+      return String(s || "").toLowerCase().replace(/[\s!-/:-@\[-`{-~]+/g, "");
+    }
+  }
+  function lucene(s){
+    return '"' + String(s).replace(/[\\"]/g, "\\$&") + '"';
+  }
+
+  // ---------- メディア種別 ----------
+  const DIGITAL_RE  = /digital\s*media|download|streaming/i;
+  const PHYSICAL_RE = /cd|vinyl|shellac|cassette|minidisc|\bdat\b|dcc|reel|8-?track|flexi|sacd|dvd|blu-?ray|hd-?dvd|vhs|umd|laserdisc|microcassette|8cm|hqcd|playbutton|slotmusic|usb|cartridge|piano\s*roll|wax/i;
+
+  function isPhysicalFormat(f){
+    if(!f) return false;
+    if(DIGITAL_RE.test(f)) return false;
+    return PHYSICAL_RE.test(f);
+  }
+  function mediaFormats(rel){
+    return (rel.media || rel.mediums || []).map(function(m){ return m && m.format ? m.format : ""; });
+  }
+  // "physical" = CD・レコードなどの実物 / "digital" = 配信のみ / "unknown" = 情報なし
+  function releaseKind(rel){
+    const fs = mediaFormats(rel).filter(Boolean);
+    if(!fs.length) return "unknown";
+    if(fs.some(isPhysicalFormat)) return "physical";
+    return "digital";
+  }
+  function releaseDate(rel){
+    const cands = [];
+    if(rel.date) cands.push(rel.date);
+    (rel["release-events"] || []).forEach(function(ev){ if(ev && ev.date) cands.push(ev.date); });
+    let best = null, bestKey = null;
+    cands.forEach(function(d){
+      const k = dateKey(d);
+      if(k && (!bestKey || k < bestKey)){ bestKey = k; best = d; }
+    });
+    return best;
+  }
+
+  // ---------- MusicBrainz ----------
+  let mbChain = Promise.resolve();
+  let mbLast = 0;
+  let aborting = false;
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  function abortError(){ const e = new Error("照会を中止しました。"); e.aborted = true; return e; }
+
+  // 1秒1リクエストの制限を守るため、すべての照会を直列に流す
+  function mbSchedule(fn){
+    const run = mbChain.then(async function(){
+      const wait = MB_GAP - (Date.now() - mbLast);
+      if(wait > 0) await sleep(wait);
+      try{ return await fn(); }
+      finally{ mbLast = Date.now(); }
+    });
+    mbChain = run.then(function(){}, function(){});
+    return run;
+  }
+
+  async function mbGet(path){
+    if(aborting) throw abortError();
+    return mbSchedule(async function(){
+      for(let attempt = 0; attempt < 3; attempt++){
+        if(aborting) throw abortError();
+        let res;
+        try{
+          res = await fetch(MB_BASE + path, {headers: {"Accept": "application/json"}});
+        }catch(e){
+          throw new Error("MusicBrainzに接続できませんでした。");
+        }
+        if(res.status === 503 || res.status === 429){
+          await sleep(2000 * (attempt + 1));
+          continue;
+        }
+        if(!res.ok) throw new Error("MusicBrainzからの応答 [" + res.status + "]");
+        return res.json();
       }
-      if(ta.disc_number !== tb.disc_number) return ta.disc_number - tb.disc_number;
-      return ta.track_number - tb.track_number;
+      throw new Error("MusicBrainzが混み合っています。");
     });
   }
 
-  function formatDate(album){
-    const p = album.release_date_precision, d = album.release_date || "";
-    if(p === "year")  return d + "年";
-    if(p === "month") return d.replace("-", "年") + "月";
-    const parts = d.split("-");
-    return parts.length === 3 ? parts[0] + "." + parts[1] + "." + parts[2] : d;
+  // ---------- 調べた発売日の保存 ----------
+  let cache = {albums: {}, recordings: {}};
+  let cacheDirty = false;
+  try{
+    const raw = localStorage.getItem(CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if(parsed && parsed.albums && parsed.recordings) cache = parsed;
+  }catch(e){}
+
+  function cacheGet(kind, key){
+    const entry = cache[kind][key];
+    if(!entry) return null;
+    if(!entry.at || Date.now() - entry.at > CACHE_TTL){ delete cache[kind][key]; return null; }
+    return entry.v;
+  }
+  function cachePut(kind, key, value){
+    cache[kind][key] = {at: Date.now(), v: value};
+    cacheDirty = true;
+  }
+  function cacheFlush(){
+    if(!cacheDirty) return;
+    try{ localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); cacheDirty = false; }
+    catch(e){ /* 保存できなくても動作には影響しない */ }
   }
 
+  // ---------- 物理リリースの絞り込み ----------
+  // メディア情報が無いリリースは、古い順に最大2件だけ本体を引いて確認する
+  async function earliestPhysical(releases){
+    let best = null;
+    const unknown = [];
+
+    releases.forEach(function(rel){
+      if(!rel) return;
+      const d = releaseDate(rel);
+      if(!d) return;
+      const kind = releaseKind(rel);
+      const key = dateKey(d);
+      if(!key) return;
+      if(kind === "physical"){
+        if(!best || key < best.key){
+          best = {date: d, key: key, title: rel.title || "", format: mediaFormats(rel).filter(isPhysicalFormat)[0] || ""};
+        }
+      }else if(kind === "unknown" && rel.id){
+        unknown.push({id: rel.id, date: d, key: key, title: rel.title || ""});
+      }
+    });
+    if(best) return best;
+
+    unknown.sort(function(a, b){ return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
+    const seen = {};
+    let checked = 0;
+    for(let i = 0; i < unknown.length && checked < 2; i++){
+      if(seen[unknown[i].id]) continue;
+      seen[unknown[i].id] = true;
+      checked++;
+      try{
+        const full = await mbGet("/release/" + unknown[i].id + "?fmt=json&inc=media");
+        if(releaseKind(full) === "physical"){
+          const d = releaseDate(full) || unknown[i].date;
+          return {
+            date: d, key: dateKey(d), title: full.title || unknown[i].title,
+            format: mediaFormats(full).filter(isPhysicalFormat)[0] || ""
+          };
+        }
+      }catch(e){
+        if(e && e.aborted) throw e;
+      }
+    }
+    return null;
+  }
+
+  // ---------- アルバム単位の照会 ----------
+  function albumMatches(rel, album){
+    const t1 = norm(baseTitle(rel.title));
+    const t2 = norm(baseTitle(album.name));
+    if(!t1 || !t2) return false;
+    if(!(t1 === t2 || t1.indexOf(t2) === 0 || t2.indexOf(t1) === 0)) return false;
+
+    const mbArtists = (rel["artist-credit"] || []).map(function(c){
+      return norm((c && c.artist && c.artist.name) || (c && c.name) || "");
+    }).filter(Boolean);
+    const spArtists = (album.artists || []).map(function(a){ return norm(a.name); }).filter(Boolean);
+    if(!mbArtists.length || !spArtists.length) return true;   // 片方が不明ならタイトル一致で採用
+
+    return mbArtists.some(function(ma){
+      return spArtists.some(function(sa){
+        return ma === sa || ma.indexOf(sa) === 0 || sa.indexOf(ma) === 0;
+      });
+    });
+  }
+
+  async function lookupAlbum(album){
+    const cached = cacheGet("albums", album.id);
+    if(cached) return cached;
+
+    const title = baseTitle(album.name);
+    if(!title) return {date: null};
+
+    const artist = ((album.artists || [])[0] || {}).name || "";
+    let q = "release:" + lucene(title);
+    if(artist && !/various\s*artists|オムニバス/i.test(artist)) q += " AND artist:" + lucene(artist);
+
+    let result;
+    try{
+      const data = await mbGet("/release/?fmt=json&limit=25&query=" + encodeURIComponent(q));
+      const matched = (data.releases || []).filter(function(r){ return albumMatches(r, album); });
+      const best = await earliestPhysical(matched);
+      result = best
+        ? {date: best.date, title: best.title, format: best.format}
+        : {date: null, matched: matched.length};
+    }catch(e){
+      if(e && e.aborted) throw e;
+      return null;    // 一時的な失敗は保存しない
+    }
+    cachePut("albums", album.id, result);
+    return result;
+  }
+
+  // ---------- 曲単位（ISRC）の照会 ----------
+  async function lookupRecording(isrc){
+    const cached = cacheGet("recordings", isrc);
+    if(cached) return cached;
+    if(!/^[A-Za-z0-9]{12}$/.test(isrc)) return {date: null};
+
+    let result;
+    try{
+      const data = await mbGet("/recording/?fmt=json&limit=25&query=isrc:" + encodeURIComponent(isrc));
+      const releases = [];
+      (data.recordings || []).forEach(function(rec){
+        (rec.releases || []).forEach(function(rel){ releases.push(rel); });
+      });
+      const best = await earliestPhysical(releases);
+      result = best
+        ? {date: best.date, title: best.title, format: best.format}
+        : {date: null, seen: releases.length};
+    }catch(e){
+      if(e && e.aborted) throw e;
+      return null;
+    }
+    cachePut("recordings", isrc, result);
+    return result;
+  }
+
+  // ---------- 発売日の決定 ----------
+  // ISRCは12桁の英数字。ハイフン入りで返ってくることがあるので取り除いて揃える。
+  function isrcOf(track){
+    const raw = track.external_ids && track.external_ids.isrc;
+    return raw ? String(raw).toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+  }
+
+  function assignDates(items, albumInfo, recInfo){
+    items.forEach(function(it){
+      const t  = it.track;
+      const sp = spotifyDate(t.album);
+      const cands = [];
+
+      const rec = recInfo[isrcOf(t)];
+      if(rec && rec.date) cands.push(rec);
+      const alb = t.album && albumInfo[t.album.id];
+      if(alb && alb.date) cands.push(alb);
+
+      cands.sort(function(a, b){
+        const ka = dateKey(a.date) || "9999-12-31", kb = dateKey(b.date) || "9999-12-31";
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      });
+
+      if(cands.length){
+        it.rel = {
+          date: cands[0].date, source: "physical",
+          format: cands[0].format || "", title: cands[0].title || "", spotify: sp
+        };
+      }else{
+        it.rel = {date: sp, source: "spotify", format: "", title: "", spotify: sp};
+      }
+    });
+  }
+
+  // アルバム→曲の順に照会する。中止された分はSpotifyの配信開始日にフォールバックする。
+  async function resolveReleaseDates(items){
+    const albumInfo = {}, recInfo = {};
+    const albums = [];
+    const seenAlbum = {};
+    items.forEach(function(it){
+      const a = it.track.album;
+      if(a && a.id && !seenAlbum[a.id]){ seenAlbum[a.id] = true; albums.push(a); }
+    });
+
+    let stopped = false;
+    let failures = 0;
+
+    try{
+      for(let i = 0; i < albums.length; i++){
+        say(el.status, "CD・レコードの発売日を照会中… アルバム " + (i + 1) + " / " + albums.length +
+          "（残り約" + Math.ceil((albums.length - i) * MB_GAP / 1000) + "秒）", "warn");
+        const info = await lookupAlbum(albums[i]);
+        if(info) albumInfo[albums[i].id] = info; else failures++;
+      }
+
+      // ベスト盤・コンピレーション、またはアルバムで見つからなかった曲はISRCで調べ直す
+      const needIsrc = [];
+      const seenIsrc = {};
+      items.forEach(function(it){
+        const t = it.track;
+        const isrc = isrcOf(t);
+        if(!isrc || seenIsrc[isrc]) return;
+        const alb = t.album && albumInfo[t.album.id];
+        const isComp = t.album && t.album.album_type === "compilation";
+        if(isComp || !alb || !alb.date){
+          seenIsrc[isrc] = true;
+          needIsrc.push(isrc);
+        }
+      });
+
+      for(let i = 0; i < needIsrc.length; i++){
+        say(el.status, "CD・レコードの発売日を照会中… 曲 " + (i + 1) + " / " + needIsrc.length +
+          "（残り約" + Math.ceil((needIsrc.length - i) * MB_GAP / 1000) + "秒）", "warn");
+        const info = await lookupRecording(needIsrc[i]);
+        if(info) recInfo[needIsrc[i]] = info; else failures++;
+      }
+    }catch(e){
+      if(e && e.aborted) stopped = true;
+      else throw e;
+    }finally{
+      cacheFlush();
+    }
+
+    assignDates(items, albumInfo, recInfo);
+    return {stopped: stopped, failures: failures};
+  }
+
+  // ---------- 並べ替え ----------
+  function sortItems(items, order){
+    const dir = order === "asc" ? 1 : -1;
+    return items.slice().sort(function(a, b){
+      const ta = a.track, tb = b.track;
+      const ka = dateKey(a.rel && a.rel.date) || "0000-01-01";
+      const kb = dateKey(b.rel && b.rel.date) || "0000-01-01";
+      if(ka !== kb) return ka < kb ? -dir : dir;                // 発売日（新しい順 / 古い順）
+      const ida = (ta.album && ta.album.id) || "", idb = (tb.album && tb.album.id) || "";
+      if(ida !== idb){                                          // 同日別リリースはまとめる
+        return ((ta.album && ta.album.name) || "").localeCompare((tb.album && tb.album.name) || "", "ja");
+      }
+      if(ta.disc_number !== tb.disc_number) return ta.disc_number - tb.disc_number;
+      return ta.track_number - tb.track_number;                 // 収録順は常に昇順
+    });
+  }
+
+  // ---------- 一覧の描画 ----------
   function render(){
     el.list.textContent = "";
-    let current = null, ol = null;
+    let currentKey = null, ol = null;
 
     sorted.forEach(function(item){
       const t = item.track;
-      if(!current || current !== t.album.id){
-        current = t.album.id;
+      const rel = item.rel || {date: spotifyDate(t.album), source: "spotify"};
+      const groupKey = ((t.album && t.album.id) || "") + "|" + (rel.date || "") + "|" + rel.source;
+
+      if(groupKey !== currentKey){
+        currentKey = groupKey;
         const box = document.createElement("div");
         box.className = "release";
+
         const head = document.createElement("div");
         head.className = "release-head";
+
         const date = document.createElement("span");
         date.className = "date";
-        date.textContent = formatDate(t.album);
+        date.textContent = formatDate(rel.date);
+
+        const tag = document.createElement("span");
+        if(rel.source === "physical"){
+          tag.className = "tag phys";
+          tag.textContent = rel.format ? "CD・レコード（" + rel.format + "）" : "CD・レコード";
+        }else{
+          tag.className = "tag digi";
+          tag.textContent = "配信";
+        }
+
         const name = document.createElement("span");
         name.className = "album";
-        name.textContent = t.album.name || "";
-        head.append(date, name);
+        name.textContent = (t.album && t.album.name) || "";
+
+        head.append(date, tag, name);
+
+        if(rel.source === "physical" && rel.spotify && dateKey(rel.spotify) !== dateKey(rel.date)){
+          const sub = document.createElement("span");
+          sub.className = "subdate";
+          sub.textContent = "Spotifyの配信開始日: " + formatDate(rel.spotify) +
+            (rel.title && rel.title !== ((t.album && t.album.name) || "") ? "／照合したリリース: " + rel.title : "");
+          head.append(sub);
+        }
+
         ol = document.createElement("ol");
         ol.className = "tracks";
         box.append(head, ol);
         el.list.append(box);
       }
+
       const li = document.createElement("li");
       const no = document.createElement("span");
       no.className = "no";
@@ -407,13 +849,37 @@
     });
   }
 
+  function describe(skipped){
+    const phys = sorted.filter(function(i){ return i.rel && i.rel.source === "physical"; }).length;
+    const digi = sorted.length - phys;
+    const order = currentOrder() === "asc" ? "発売日が古い順" : "発売日が新しい順";
+    const releases = new Set(sorted.map(function(i){
+      return ((i.track.album && i.track.album.id) || "") + "|" + ((i.rel && i.rel.date) || "");
+    }));
+    el.previewMeta.textContent =
+      order + "／" + sorted.length + "曲 / " + releases.size + "リリース" +
+      "（CD・レコード基準 " + phys + "曲、配信日基準 " + digi + "曲）" +
+      (skipped ? "／ローカルファイルなど " + skipped + "曲は対象外" : "");
+  }
+
+  function resortAndRender(){
+    if(!sorted.length) return;
+    sorted = sortItems(sorted, currentOrder());
+    render();
+    describe(lastSkipped);
+  }
+
   // ---------- 読み込み ----------
+  let lastSkipped = 0;
+
   async function load(){
     const id = parsePlaylistId(el.playlistId.value);
     if(!id){ say(el.status, "プレイリストのURLまたはIDを入力してください。", "err"); el.playlistId.focus(); return; }
 
     el.load.disabled = true;
     el.preview.classList.add("hidden");
+    aborting = false;
+    say(el.status, "読み込み中…");
     try{
       let info = null;
       try{
@@ -435,17 +901,37 @@
 
       if(!usable.length){ say(el.status, "並べ替えできる曲が見つかりませんでした。", "err"); el.load.disabled = false; return; }
 
+      let outcome = {stopped: false, failures: 0};
+      if(el.useMb.checked){
+        el.stop.classList.remove("hidden");
+        try{
+          outcome = await resolveReleaseDates(usable);
+        }finally{
+          el.stop.classList.add("hidden");
+          aborting = false;
+        }
+      }else{
+        assignDates(usable, {}, {});
+      }
+
       playlist = {id: id, name: (info && info.name) || "プレイリスト"};
       original = usable;
-      sorted = sortItems(usable);
+      lastSkipped = skipped.length;
+      sorted = sortItems(usable, currentOrder());
       render();
 
       el.previewTitle.textContent = playlist.name;
-      const releases = new Set(sorted.map(function(i){ return i.track.album.id; }));
-      el.previewMeta.textContent = sorted.length + "曲 / " + releases.size + "リリース" +
-        (skipped.length ? "（ローカルファイルなど " + skipped.length + "曲は対象外）" : "");
+      describe(skipped.length);
       el.preview.classList.remove("hidden");
-      say(el.status, "この順序でよければ、下のボタンで書き戻せます。", "ok");
+
+      if(outcome.stopped){
+        say(el.status, "発売日の照会を中止しました。調べ終わっていない曲はSpotifyの配信開始日で並べています。", "warn");
+      }else if(outcome.failures){
+        say(el.status, "一部の曲はMusicBrainzに照会できませんでした（" + outcome.failures +
+          "件）。その分は配信開始日で並べています。この順序でよければ、下のボタンで書き戻せます。", "warn");
+      }else{
+        say(el.status, "この順序でよければ、下のボタンで書き戻せます。", "ok");
+      }
     }catch(e){
       say(el.status, e.message, "err");
     }
@@ -459,7 +945,13 @@
       playlistId: playlist.id,
       savedAt: new Date().toISOString(),
       tracks: original.map(function(i){
-        return {name: i.track.name, album: i.track.album.name, uri: i.track.uri};
+        return {
+          name: i.track.name,
+          album: i.track.album ? i.track.album.name : "",
+          uri: i.track.uri,
+          releaseDate: i.rel ? i.rel.date : "",
+          releaseDateSource: i.rel ? (i.rel.source === "physical" ? "cd-vinyl" : "spotify") : ""
+        };
       })
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -580,12 +1072,41 @@
     el.clientId.disabled = true;
   }
 
+  function syncChoiceStyles(){
+    Array.prototype.forEach.call(el.orderChoices.querySelectorAll(".choice"), function(label){
+      const input = label.querySelector("input");
+      label.classList.toggle("on", !!(input && input.checked));
+    });
+    el.useMbLabel.classList.toggle("on", el.useMb.checked);
+  }
+
   el.connect.addEventListener("click", connect);
   el.load.addEventListener("click", load);
   el.check.addEventListener("click", check);
   el.mineBtn.addEventListener("click", listMine);
   el.backup.addEventListener("click", backup);
   el.apply.addEventListener("click", apply);
+  el.stop.addEventListener("click", function(){
+    aborting = true;
+    say(el.status, "照会を中止しています…", "warn");
+  });
+  el.useMb.addEventListener("change", function(){
+    syncChoiceStyles();
+    localStorage.setItem("use_musicbrainz", el.useMb.checked ? "1" : "0");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="order"]'), function(input){
+    input.addEventListener("change", function(){
+      syncChoiceStyles();
+      localStorage.setItem("sort_order", currentOrder());
+      resortAndRender();
+    });
+  });
+  el.clearCache.addEventListener("click", function(){
+    cache = {albums: {}, recordings: {}};
+    cacheDirty = false;
+    try{ localStorage.removeItem(CACHE_KEY); }catch(e){}
+    say(el.status, "保存していた発売日を消去しました。次の読み込みで調べ直します。", "ok");
+  });
   el.logout.addEventListener("click", function(){
     sessionStorage.clear();
     location.href = REDIRECT;
@@ -593,12 +1114,22 @@
   el.playlistId.addEventListener("keydown", function(e){
     if(e.key === "Enter" && !el.load.disabled) load();
   });
+  window.addEventListener("beforeunload", cacheFlush);
 
   (async function init(){
     const saved = sessionStorage.getItem("client_id");
     if(saved) el.clientId.value = saved;
     const savedPl = sessionStorage.getItem("playlist_input");
     if(savedPl) el.playlistId.value = savedPl;
+
+    try{
+      if(localStorage.getItem("use_musicbrainz") === "0") el.useMb.checked = false;
+      if(localStorage.getItem("sort_order") === "asc"){
+        const asc = document.querySelector('input[name="order"][value="asc"]');
+        if(asc) asc.checked = true;
+      }
+    }catch(e){}
+    syncChoiceStyles();
 
     const params = new URLSearchParams(location.search);
     if(params.get("error")){

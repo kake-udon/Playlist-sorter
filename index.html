@@ -98,6 +98,14 @@
   details li{margin-bottom:8px}
   code{background:var(--panel);padding:2px 5px;border-radius:4px;font-size:.86em;overflow-wrap:anywhere}
   .hidden{display:none}
+  #mine{margin-top:18px}
+  .pl-item{
+    display:block;width:100%;text-align:left;margin-bottom:8px;
+    border:1px solid var(--line);padding:10px 13px;font-weight:400;
+  }
+  .pl-item b{display:block;font-weight:600;font-size:.95rem}
+  .pl-item span{color:var(--muted);font-size:.8rem}
+  .pl-item.foreign{opacity:.55}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -129,11 +137,14 @@
 <div class="actions">
   <button id="btnConnect" class="primary">Spotifyに接続</button>
   <button id="btnLoad" disabled>曲を読み込む</button>
+  <button id="btnMine" class="hidden">自分のプレイリスト一覧</button>
   <button id="btnCheck" class="hidden">接続の確認</button>
   <button id="btnLogout" class="hidden">接続を解除</button>
 </div>
 
 <p class="status" id="status"></p>
+
+<div id="mine"></div>
 
 <section id="preview" class="hidden">
   <h2 id="previewTitle"></h2>
@@ -177,6 +188,7 @@
   const el = {
     clientId: $("clientId"), playlistId: $("playlistId"),
     connect: $("btnConnect"), load: $("btnLoad"), logout: $("btnLogout"), check: $("btnCheck"),
+    mineBtn: $("btnMine"), mine: $("mine"),
     status: $("status"), preview: $("preview"), previewTitle: $("previewTitle"),
     previewMeta: $("previewMeta"), list: $("list"),
     backup: $("btnBackup"), apply: $("btnApply"), applyStatus: $("applyStatus")
@@ -402,7 +414,12 @@
     el.load.disabled = true;
     el.preview.classList.add("hidden");
     try{
-      const info = await api("/playlists/" + id + "?fields=name,owner(display_name)");
+      let info = null;
+      try{
+        info = await api("/playlists/" + id + "?fields=name,owner(display_name)");
+      }catch(e){
+        say(el.status, "プレイリスト名を取得できませんでしたが、曲の読み込みを試みます…", "warn");
+      }
       const items = await fetchAllTracks(id);
 
       const usable = [], skipped = [];
@@ -417,12 +434,12 @@
 
       if(!usable.length){ say(el.status, "並べ替えできる曲が見つかりませんでした。", "err"); el.load.disabled = false; return; }
 
-      playlist = {id: id, name: info.name};
+      playlist = {id: id, name: (info && info.name) || "プレイリスト"};
       original = usable;
       sorted = sortItems(usable);
       render();
 
-      el.previewTitle.textContent = info.name;
+      el.previewTitle.textContent = playlist.name;
       const releases = new Set(sorted.map(function(i){ return i.track.album.id; }));
       el.previewMeta.textContent = sorted.length + "曲 / " + releases.size + "リリース" +
         (skipped.length ? "（ローカルファイルなど " + skipped.length + "曲は対象外）" : "");
@@ -484,6 +501,48 @@
     el.backup.disabled = false;
   }
 
+  // ---------- 自分のプレイリスト一覧 ----------
+  async function listMine(){
+    el.mineBtn.disabled = true;
+    el.mine.textContent = "";
+    say(el.status, "プレイリストを取得中…");
+    try{
+      const me = await api("/me");
+      const all = [];
+      let offset = 0;
+      while(true){
+        const page = await api("/me/playlists?limit=50&offset=" + offset);
+        all.push.apply(all, page.items || []);
+        if(!page.next) break;
+        offset += 50;
+      }
+      if(!all.length){ say(el.status, "プレイリストが見つかりませんでした。", "warn"); el.mineBtn.disabled = false; return; }
+
+      all.forEach(function(p){
+        const own = p.owner && p.owner.id === me.id;
+        const b = document.createElement("button");
+        b.className = "pl-item" + (own ? "" : " foreign");
+        const t = document.createElement("b");
+        t.textContent = p.name || "(名称なし)";
+        const s = document.createElement("span");
+        s.textContent = (p.tracks ? p.tracks.total + "曲・" : "") +
+          (own ? "自分のプレイリスト" : "作成者: " + ((p.owner && p.owner.display_name) || "他のユーザー")) +
+          "・" + p.id;
+        b.append(t, s);
+        b.addEventListener("click", function(){
+          el.playlistId.value = p.id;
+          el.mine.textContent = "";
+          load();
+        });
+        el.mine.append(b);
+      });
+      say(el.status, all.length + "件見つかりました。並べ替えたいものを選んでください。", "ok");
+    }catch(e){
+      say(el.status, e.message, "err");
+    }
+    el.mineBtn.disabled = false;
+  }
+
   // ---------- 診断 ----------
   async function check(){
     el.check.disabled = true;
@@ -515,12 +574,14 @@
     el.load.classList.add("primary");
     el.logout.classList.remove("hidden");
     el.check.classList.remove("hidden");
+    el.mineBtn.classList.remove("hidden");
     el.clientId.disabled = true;
   }
 
   el.connect.addEventListener("click", connect);
   el.load.addEventListener("click", load);
   el.check.addEventListener("click", check);
+  el.mineBtn.addEventListener("click", listMine);
   el.backup.addEventListener("click", backup);
   el.apply.addEventListener("click", apply);
   el.logout.addEventListener("click", function(){

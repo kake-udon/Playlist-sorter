@@ -129,6 +129,7 @@
 <div class="actions">
   <button id="btnConnect" class="primary">Spotifyに接続</button>
   <button id="btnLoad" disabled>曲を読み込む</button>
+  <button id="btnCheck" class="hidden">接続の確認</button>
   <button id="btnLogout" class="hidden">接続を解除</button>
 </div>
 
@@ -175,7 +176,7 @@
   const $ = (id) => document.getElementById(id);
   const el = {
     clientId: $("clientId"), playlistId: $("playlistId"),
-    connect: $("btnConnect"), load: $("btnLoad"), logout: $("btnLogout"),
+    connect: $("btnConnect"), load: $("btnLoad"), logout: $("btnLogout"), check: $("btnCheck"),
     status: $("status"), preview: $("preview"), previewTitle: $("previewTitle"),
     previewMeta: $("previewMeta"), list: $("list"),
     backup: $("btnBackup"), apply: $("btnApply"), applyStatus: $("applyStatus")
@@ -483,6 +484,28 @@
     el.backup.disabled = false;
   }
 
+  // ---------- 診断 ----------
+  async function check(){
+    el.check.disabled = true;
+    say(el.status, "確認中…");
+    try{
+      const me = await api("/me");
+      say(el.status,
+        "接続中のアカウント: " + (me.display_name || "(名前なし)") + "（ID: " + me.id + "）" +
+        " このアカウントでプレイリストを作成しているか、User Managementに登録済みか確認してください。", "ok");
+    }catch(e){
+      if(e.message.indexOf("403") !== -1){
+        say(el.status,
+          "アカウント情報の取得も拒否されました。プレイリストの問題ではなく、アプリ側の設定が原因です。" +
+          "ダッシュボードの User Management に、いま認証したSpotifyアカウントのメールアドレスを追加してから、" +
+          "接続を解除してつなぎ直してください。", "err");
+      }else{
+        say(el.status, e.message, "err");
+      }
+    }
+    el.check.disabled = false;
+  }
+
   // ---------- 起動 ----------
   function signedIn(){
     el.connect.textContent = "接続済み";
@@ -491,11 +514,13 @@
     el.load.disabled = false;
     el.load.classList.add("primary");
     el.logout.classList.remove("hidden");
+    el.check.classList.remove("hidden");
     el.clientId.disabled = true;
   }
 
   el.connect.addEventListener("click", connect);
   el.load.addEventListener("click", load);
+  el.check.addEventListener("click", check);
   el.backup.addEventListener("click", backup);
   el.apply.addEventListener("click", apply);
   el.logout.addEventListener("click", function(){
